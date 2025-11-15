@@ -11,6 +11,9 @@ contract Campaign {
     uint256 public immutable targetAmount;          // Mục tiêu cần đạt
     uint256 public immutable deadline;              // Thời điểm kết thúc chiến dịch
     uint256 public totalRaised;                     // Tổng số tiền đã huy động
+    string public campaignDescription;        // Mô tả chiến dịch
+    uint256 public createdAt;                      // Thời điểm tạo chiến dịch
+    
 
     // Danh sách người donate & số tiền họ đóng góp
     address[] public donors;
@@ -43,11 +46,14 @@ contract Campaign {
     constructor(
         address payable _owner,
         uint256 _target,
-        uint256 _durationInSeconds
+        uint256 _durationInSeconds,
+        string  memory _campaignDescription
     ) {
         owner = _owner;
         targetAmount = _target;
         deadline = block.timestamp + _durationInSeconds;
+        campaignDescription = _campaignDescription;
+        createdAt = block.timestamp;
     }
 
     // --- 1. Donate ---

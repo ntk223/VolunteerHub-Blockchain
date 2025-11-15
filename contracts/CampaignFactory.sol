@@ -25,14 +25,16 @@ contract CampaignFactory {
     function createCampaign(
         address payable _owner,
         uint256 _targetAmount,
-        uint256 _durationInSeconds
+        uint256 _durationInSeconds,
+        string  memory campaignDescription
     ) public {
         
         // Tạo một hợp đồng Campaign mới
         Campaign newCampaign = new Campaign(
             _owner,
             _targetAmount,
-            _durationInSeconds
+            _durationInSeconds,
+            campaignDescription
         );
         
         // Lưu lại địa chỉ của hợp đồng vừa tạo

@@ -1,8 +1,21 @@
 const {ethers} = require("hardhat");
 
 async function main() {
-    const campaignAddress = "0x427f7c59ED72bCf26DfFc634FEF3034e00922DD8"
+    const campaignAddress = "0xa16E02E87b7454126E5E10d957A927A7F5B5d2be"
     const campaign = await ethers.getContractAt("Campaign", campaignAddress);
+    console.log(`🎯 Thông tin chi tiết Campaign tại địa chỉ: ${campaignAddress}\n`)
+    console.log(`Người tạo: ${await campaign.owner()}`);
+    console.log(`Mục tiêu: ${ethers.formatEther(await campaign.targetAmount())} ETH`);
+    const createdAt = await campaign.createdAt();
+    console.log(`Thời gian tạo: ${new Date(Number(createdAt) * 1000).toLocaleString()}`);
+    console.log(`Tổng tiền đã quyên góp: ${ethers.formatEther(await campaign.totalRaised())} ETH`);
+    const deadline = await campaign.deadline();
+    console.log(`Hạn chót quyên góp: ${new Date(Number(deadline) * 1000).toLocaleString()}`);
+    // const isSuccessful = await campaign.isSuccessful();
+    // console.log(`Trạng thái chiến dịch: ${isSuccessful ? "THÀNH CÔNG" : "CHƯA THÀNH CÔNG"}`);
+    console.log(`Mô tả chiến dịch: ${await campaign.campaignDescription()}\n`);
+
+    console.log("📋 Danh sách người quyên góp:");
     // const [owner, donator1, donator2] = await ethers.getSigners();
     // const amount1 = await campaign.contributions(donator1.address);
     // const amount2 = await campaign.contributions(donator2.address);

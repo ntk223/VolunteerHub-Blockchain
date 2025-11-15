@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import contractService from '../utils/contractService';
 import toast from 'react-hot-toast';
 
@@ -30,7 +30,7 @@ export const CampaignProvider = ({ children }) => {
     fetchCampaigns();
   }, [fetchCampaigns]);
 
-  const getCampaignDetails = async (address) => {
+  const getCampaignDetails = useCallback(async (address) => {
     try {
       const details = await contractService.getCampaignDetails(address);
       return details;
@@ -38,13 +38,11 @@ export const CampaignProvider = ({ children }) => {
       console.error('Lỗi lấy chi tiết campaign:', error);
       return null;
     }
-  }
+  }, []);
 
-  const createCampaign = async (owner, targetAmount, durationInDays) => {
+  const createCampaign = useCallback(async (owner, targetAmount, durationInDays, campaignDescription) => {
     try {
-      const durationInSeconds = durationInDays * 24 * 60 * 60;
-      const tx = await contractService.createCampaign(owner, targetAmount, durationInSeconds);
-    //   await tx.wait();
+      const tx = await contractService.createCampaign(owner, targetAmount, durationInDays, campaignDescription);
       toast.success('Campaign created successfully!');
       fetchCampaigns(); // Refresh the campaign list
       return true;
@@ -53,8 +51,9 @@ export const CampaignProvider = ({ children }) => {
       toast.error('Failed to create campaign.');
       return false;
     }
-  }
-  const donate = async (campaignAddress, amount) => {
+  }, [fetchCampaigns]);
+
+  const donate = useCallback(async (campaignAddress, amount) => {
     try {
         const tx = await contractService.donate(campaignAddress, amount);
         toast.success('Donation successful!');
@@ -64,14 +63,15 @@ export const CampaignProvider = ({ children }) => {
       toast.error('Failed to donate.');
       return false;
     }
-  }
+  }, []);
 
-  const contextValue = {
+  const contextValue = useMemo(() => ({
     campaigns,
     getCampaignDetails,
     createCampaign,
     donate,
-  };
+    fetchCampaigns,
+  }), [campaigns, getCampaignDetails, createCampaign, donate, fetchCampaigns]);
 
   return (
     <CampaignContext.Provider value={contextValue}>

@@ -63,11 +63,11 @@ class ContractService {
   }
 
   // Tạo campaign mới
-  async createCampaign(owner, targetAmount, durationInDays) {
+  async createCampaign(owner, targetAmount, durationInDays, campaignDescription) {
     try {
       await this.ensureInitialized();
       
-      console.log('Creating campaign:', { owner, targetAmount, durationInDays });
+      console.log('Creating campaign:', { owner, targetAmount, durationInDays, campaignDescription });
       
       const targetInWei = ethers.parseEther(targetAmount.toString());
       const durationInSeconds = durationInDays * 24 * 60 * 60;
@@ -75,13 +75,15 @@ class ContractService {
       console.log('Calling factory.createCampaign with:', {
         owner,
         targetInWei: targetInWei.toString(),
-        durationInSeconds
+        durationInSeconds,
+        campaignDescription
       });
       
       const tx = await this.factoryContract.createCampaign(
         owner,
         targetInWei,
-        durationInSeconds
+        durationInSeconds,
+        campaignDescription
       );
       
       console.log('Transaction sent:', tx.hash);
@@ -132,12 +134,14 @@ class ContractService {
       console.log(`Getting campaign details for: ${address}`);
       const campaign = new ethers.Contract(address, CAMPAIGN_ABI, this.provider);
       
-      const [owner, targetAmount, deadline, totalRaised, balance] = await Promise.all([
+      const [owner, targetAmount, deadline, totalRaised, balance, campaignDescription, createdAt] = await Promise.all([
         campaign.owner(),
         campaign.targetAmount(),
         campaign.deadline(),
         campaign.totalRaised(),
-        campaign.getBalance()
+        campaign.getBalance(),
+        campaign.campaignDescription(),
+        campaign.createdAt()
       ]);
       
       console.log('Campaign raw data:', {
@@ -369,6 +373,31 @@ async donate(campaignAddress, amount) {
       return '0';
     }
   }
+  // Lấy danh sách donors
+  async getDonors(campaignAddress) {
+    try {
+      await this.ensureInitialized();
+      
+      const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_ABI, this.provider);
+      const donorCount = await campaign.getDonorCount();
+      
+      // Lấy contributions của từng donor
+      const donorDetails = [];
+      for (let i = 0; i < donorCount; i++) {
+        const donorAddress = await campaign.donors(i);
+        const contribution = await campaign.contributions(donorAddress);
+        donorDetails.push({
+          address: donorAddress,
+          contribution: ethers.formatEther(contribution)
+        });
+      }
+      
+      return donorDetails;
+    } catch (error) {
+      console.error('Lỗi lấy danh sách donors:', error);
+      return [];
+    }
+  }
 
   // Lấy thông tin proposal
   async getProposal(campaignAddress, proposalId) {
@@ -403,6 +432,297 @@ async donate(campaignAddress, amount) {
     } catch (error) {
       console.error('Lỗi lấy số proposal:', error);
       return 0;
+    }
+  }
+
+  // --- EVENT LISTENERS ---
+
+  // Lắng nghe sự kiện Donated sử dụng polling
+  listenToDonated(campaignAddress, callback) {
+    try {
+      let lastBlockNumber = 0;
+      let isActive = true;
+      
+      const pollForEvents = async () => {
+        if (!isActive) return;
+        
+        try {
+          const currentBlock = await this.provider.getBlockNumber();
+          if (lastBlockNumber === 0) {
+            lastBlockNumber = currentBlock - 10; // Bắt đầu từ 10 blocks trước
+          }
+          
+          if (currentBlock > lastBlockNumber) {
+            const events = await this.getPastEvents(campaignAddress, 'Donated', lastBlockNumber + 1);
+            events.forEach(event => callback(event));
+            lastBlockNumber = currentBlock;
+          }
+        } catch (error) {
+          console.error('Error polling for Donated events:', error);
+        }
+        
+        if (isActive) {
+          setTimeout(pollForEvents, 5000); // Poll mỗi 5 giây
+        }
+      };
+
+      pollForEvents();
+      
+      return () => {
+        isActive = false;
+      };
+    } catch (error) {
+      console.error('Lỗi listen Donated:', error);
+      return () => {};
+    }
+  }
+
+  // Lắng nghe sự kiện ProposalCreated
+  listenToProposalCreated(campaignAddress, callback) {
+    try {
+      const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_ABI, this.provider);
+      
+      campaign.on('ProposalCreated', (id, description, amount, recipient, event) => {
+        console.log('ProposalCreated event:', { 
+          id: Number(id), 
+          description, 
+          amount: ethers.formatEther(amount), 
+          recipient,
+          txHash: event.log.transactionHash 
+        });
+        callback({
+          type: 'proposalCreated',
+          id: Number(id),
+          description,
+          amount: ethers.formatEther(amount),
+          recipient,
+          txHash: event.log.transactionHash,
+          blockNumber: event.log.blockNumber
+        });
+      });
+
+      return () => campaign.removeAllListeners('ProposalCreated');
+    } catch (error) {
+      console.error('Lỗi listen ProposalCreated:', error);
+      return () => {};
+    }
+  }
+
+  // Lắng nghe sự kiện Voted
+  listenToVoted(campaignAddress, callback) {
+    try {
+      const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_ABI, this.provider);
+      
+      campaign.on('Voted', (voter, proposalId, support, weight, event) => {
+        console.log('Voted event:', { 
+          voter, 
+          proposalId: Number(proposalId), 
+          support, 
+          weight: ethers.formatEther(weight),
+          txHash: event.log.transactionHash 
+        });
+        callback({
+          type: 'voted',
+          voter,
+          proposalId: Number(proposalId),
+          support,
+          weight: ethers.formatEther(weight),
+          txHash: event.log.transactionHash,
+          blockNumber: event.log.blockNumber
+        });
+      });
+
+      return () => campaign.removeAllListeners('Voted');
+    } catch (error) {
+      console.error('Lỗi listen Voted:', error);
+      return () => {};
+    }
+  }
+
+  // Lắng nghe sự kiện ProposalExecuted
+  listenToProposalExecuted(campaignAddress, callback) {
+    try {
+      const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_ABI, this.provider);
+      
+      campaign.on('ProposalExecuted', (proposalId, amount, recipient, event) => {
+        console.log('ProposalExecuted event:', { 
+          proposalId: Number(proposalId), 
+          amount: ethers.formatEther(amount), 
+          recipient,
+          txHash: event.log.transactionHash 
+        });
+        callback({
+          type: 'proposalExecuted',
+          proposalId: Number(proposalId),
+          amount: ethers.formatEther(amount),
+          recipient,
+          txHash: event.log.transactionHash,
+          blockNumber: event.log.blockNumber
+        });
+      });
+
+      return () => campaign.removeAllListeners('ProposalExecuted');
+    } catch (error) {
+      console.error('Lỗi listen ProposalExecuted:', error);
+      return () => {};
+    }
+  }
+
+  // Lắng nghe sự kiện Refunded
+  listenToRefunded(campaignAddress, callback) {
+    try {
+      const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_ABI, this.provider);
+      
+      campaign.on('Refunded', (donor, amount, event) => {
+        console.log('Refunded event:', { donor, amount: ethers.formatEther(amount), txHash: event.log.transactionHash });
+        callback({
+          type: 'refunded',
+          donor,
+          amount: ethers.formatEther(amount),
+          txHash: event.log.transactionHash,
+          blockNumber: event.log.blockNumber
+        });
+      });
+
+      return () => campaign.removeAllListeners('Refunded');
+    } catch (error) {
+      console.error('Lỗi listen Refunded:', error);
+      return () => {};
+    }
+  }
+
+  // Lắng nghe TẤT CẢ sự kiện của một campaign sử dụng polling
+  listenToAllEvents(campaignAddress, callback) {
+    let lastBlockNumber = 0;
+    let isActive = true;
+    
+    const eventTypes = ['Donated', 'ProposalCreated', 'Voted', 'ProposalExecuted', 'Refunded'];
+    
+    const pollForAllEvents = async () => {
+      if (!isActive) return;
+      
+      try {
+        const currentBlock = await this.provider.getBlockNumber();
+        if (lastBlockNumber === 0) {
+          lastBlockNumber = currentBlock - 5; // Bắt đầu từ 5 blocks trước
+          console.log(`📡 Starting event polling for ${campaignAddress} from block ${lastBlockNumber}`);
+        }
+        
+        if (currentBlock > lastBlockNumber) {
+          // Poll tất cả event types
+          for (const eventType of eventTypes) {
+            try {
+              const events = await this.getPastEvents(campaignAddress, eventType, lastBlockNumber + 1);
+              events.forEach(event => callback(event));
+            } catch (error) {
+              console.error(`Error polling ${eventType} events:`, error);
+            }
+          }
+          lastBlockNumber = currentBlock;
+        }
+      } catch (error) {
+        console.error('Error polling for events:', error);
+      }
+      
+      if (isActive) {
+        setTimeout(pollForAllEvents, 5000); // Poll mỗi 5 giây để giảm tải
+      }
+    };
+
+    pollForAllEvents();
+
+    // Trả về hàm để stop polling
+    return () => {
+      isActive = false;
+    };
+  }
+
+  // Lấy events đã qua (từ block cũ)
+  async getPastEvents(campaignAddress, eventName, fromBlock = 0) {
+    try {
+      await this.ensureInitialized();
+      
+      const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_ABI, this.provider);
+      
+      const filter = campaign.filters[eventName]();
+      const events = await campaign.queryFilter(filter, fromBlock);
+      
+      const parsedEvents = events.map(event => {
+        const parsed = campaign.interface.parseLog(event);
+        
+        // Format theo từng loại event như callback expect
+        switch (eventName) {
+          case 'Donated':
+            return {
+              type: 'donated',
+              donor: parsed.args.donor,
+              amount: ethers.formatEther(parsed.args.amount),
+              transactionHash: event.transactionHash,
+              blockNumber: event.blockNumber
+            };
+          case 'ProposalCreated':
+            return {
+              type: 'proposalCreated',
+              proposalId: parsed.args.proposalId.toString(),
+              description: parsed.args.description,
+              recipient: parsed.args.recipient,
+              amount: ethers.formatEther(parsed.args.amount),
+              transactionHash: event.transactionHash,
+              blockNumber: event.blockNumber
+            };
+          case 'Voted':
+            return {
+              type: 'voted',
+              proposalId: parsed.args.proposalId.toString(),
+              voter: parsed.args.voter,
+              support: parsed.args.support,
+              weight: ethers.formatEther(parsed.args.weight),
+              transactionHash: event.transactionHash,
+              blockNumber: event.blockNumber
+            };
+          case 'ProposalExecuted':
+            return {
+              type: 'proposalExecuted',
+              proposalId: parsed.args.proposalId.toString(),
+              recipient: parsed.args.recipient,
+              amount: ethers.formatEther(parsed.args.amount),
+              transactionHash: event.transactionHash,
+              blockNumber: event.blockNumber
+            };
+          case 'Refunded':
+            return {
+              type: 'refunded',
+              donor: parsed.args.donor,
+              amount: ethers.formatEther(parsed.args.amount),
+              transactionHash: event.transactionHash,
+              blockNumber: event.blockNumber
+            };
+          default:
+            return {
+              type: eventName.toLowerCase(),
+              args: parsed.args,
+              transactionHash: event.transactionHash,
+              blockNumber: event.blockNumber
+            };
+        }
+      });
+
+      console.log(`Past ${eventName} events:`, parsedEvents);
+      return parsedEvents;
+    } catch (error) {
+      console.error(`Lỗi lấy past ${eventName} events:`, error);
+      return [];
+    }
+  }
+
+  // Dừng tất cả listeners
+  removeAllListeners(campaignAddress) {
+    try {
+      const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_ABI, this.provider);
+      campaign.removeAllListeners();
+      console.log(`Removed all listeners for campaign: ${campaignAddress}`);
+    } catch (error) {
+      console.error('Lỗi remove listeners:', error);
     }
   }
 }

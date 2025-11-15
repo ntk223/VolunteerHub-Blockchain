@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DonateForm from './DonateForm.js';
 import { Target, Calendar, User, CheckCheck, Clock, DollarSign, Users, AlertCircle } from "lucide-react";
 import { useCampaign } from '../../hooks/useCampaign.js';
 import { useAuth } from '../../hooks/useAuth.js';
 
 const CampaignCard = ({ campaign }) => {
+  const navigate = useNavigate();
   const { formatAddress } = useAuth();
   const { getCampaignDetails } = useCampaign();
   const [campaignDetails, setCampaignDetails] = useState(null);
@@ -168,7 +170,7 @@ const CampaignCard = ({ campaign }) => {
         {/* Action buttons */}
         <div className="flex gap-2">
           <button
-            onClick={() => window.location.href = `/campaign/${campaign.address}`}
+            onClick={() => navigate(`/campaign/${campaign.address}`)}
             className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-lg font-medium shadow-md hover:shadow-lg transition-all duration-200 text-sm"
           >
             Xem Chi Tiết

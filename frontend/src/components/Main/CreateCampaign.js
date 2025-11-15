@@ -4,7 +4,7 @@ import { useCampaign } from '../../hooks/useCampaign.js';
 import { useAuth } from '../../hooks/useAuth.js';
 import toast from 'react-hot-toast';
 
-const CreateCampaign = ({ onCampaignCreated, onClose }) => {
+const CreateCampaign = ({ onClose }) => {
   const { account } = useAuth();
   const { createCampaign } = useCampaign();
   
@@ -18,7 +18,7 @@ const CreateCampaign = ({ onCampaignCreated, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.targetAmount || !formData.duration) {
+    if (!formData.targetAmount || !formData.duration || !formData.description) {
       toast.error('Vui lòng điền đầy đủ thông tin!');
       return;
     }
@@ -29,10 +29,10 @@ const CreateCampaign = ({ onCampaignCreated, onClose }) => {
     }
 
     setLoading(true);
-    const success = await createCampaign(account, formData.targetAmount, parseInt(formData.duration));
+    console.log(account, formData);
+    const success = await createCampaign(account, formData.targetAmount, parseInt(formData.duration), formData.description);
     
     if (success) {
-      onCampaignCreated();
       onClose();
     }
     setLoading(false);
@@ -110,7 +110,7 @@ const CreateCampaign = ({ onCampaignCreated, onClose }) => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mô tả (tùy chọn)
+              Mô tả về Campaign
             </label>
             <textarea
               name="description"
@@ -119,6 +119,7 @@ const CreateCampaign = ({ onCampaignCreated, onClose }) => {
               placeholder="Mô tả về campaign của bạn..."
               rows="3"
               className="input resize-none"
+              required
             />
           </div>
 
